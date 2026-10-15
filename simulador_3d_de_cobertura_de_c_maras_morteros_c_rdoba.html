@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador 3D de Cobertura de Cámaras - Morteros, Córdoba</title>
+    <!-- Tailwind CSS para diseño moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js y OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome para iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .custom-slider::-webkit-slider-thumb { background: #38bdf8; }
+    </style>
+</head>
+<body>
+
+    <!-- Contenedor del Canvas 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay / Panel de Control -->
+    <div class="absolute top-4 left-4 z-10 w-96 max-h-[90vh] overflow-y-auto glass-panel p-6 rounded-2xl shadow-2xl space-y-6">
+        <div>
+            <div class="flex items-center space-x-2 text-sky-400 font-semibold text-xs tracking-wider uppercase mb-1">
+                <i class="fa-solid fa-location-dot"></i> Morteros, Córdoba, Argentina
+            </div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Centro de Monitoreo 3D</h1>
+            <p class="text-xs text-slate-400 mt-1">Simulación tridimensional interactiva con conos de cobertura y volúmenes de cámaras de seguridad.</p>
+        </div>
+
+        <!-- Selector de Cámara Activa para Edición -->
+        <div class="space-y-3">
+            <label class="text-xs font-medium text-slate-300 uppercase tracking-wider block">Seleccionar Cámara a Controlar:</label>
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="selectCamera('fija')" id="btn-fija" class="px-3 py-2 text-xs font-bold rounded-xl border border-emerald-500/50 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition shadow-lg">
+                    <i class="fa-solid fa-video block text-base mb-1"></i> Fija Escenario
+                </button>
+                <button onclick="selectCamera('ptz')" id="btn-ptz" class="px-3 py-2 text-xs font-bold rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition">
+                    <i class="fa-solid fa-video-camera block text-base mb-1"></i> PTZ
+                </button>
+                <button onclick="selectCamera('movil')" id="btn-movil" class="px-3 py-2 text-xs font-bold rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition">
+                    <i class="fa-solid fa-tower-broadcast block text-base mb-1"></i> Móvil
+                </button>
+            </div>
+        </div>
+
+        <!-- Controles de la Cámara Seleccionada -->
+        <div id="controls-panel" class="glass-panel p-4 rounded-xl space-y-4 border border-white/5">
+            <div class="flex justify-between items-center">
+                <span id="active-cam-title" class="text-sm font-bold text-emerald-400">Cámara Fija Escenario</span>
+                <span class="text-[10px] bg-white/10 px-2 py-0.5 rounded text-slate-300">Activa</span>
+            </div>
+
+            <!-- Orientación / Rotación -->
+            <div class="space-y-1">
+                <div class="flex justify-between text-xs text-slate-300">
+                    <span>Orientación (Ángulo Pan):</span>
+                    <span id="val-rot">0°</span>
+                </div>
+                <input type="range" min="0" max="360" value="0" step="1" id="slider-rot" class="w-full accent-emerald-400 bg-slate-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+            </div>
+
+            <!-- Apertura del Cono -->
+            <div class="space-y-1">
+                <div class="flex justify-between text-xs text-slate-300">
+                    <span>Ángulo de Cobertura:</span>
+                    <span id="val-fov">60°</span>
+                </div>
+                <input type="range" min="30" max="150" value="60" step="1" id="slider-fov" class="w-full accent-emerald-400 bg-slate-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+            </div>
+
+            <!-- Alcance / Distancia -->
+            <div class="space-y-1">
+                <div class="flex justify-between text-xs text-slate-300">
+                    <span>Distancia de Alcance:</span>
+                    <span id="val-range">35 m</span>
+                </div>
+                <input type="range" min="15" max="80" value="35" step="1" id="slider-range" class="w-full accent-emerald-400 bg-slate-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+            </div>
+        </div>
+
+        <!-- Leyenda General -->
+        <div class="space-y-2 pt-2 border-t border-white/10">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Disposición en el Parque</span>
+            <div class="space-y-2 text-xs">
+                <div class="flex items-center space-x-2 text-slate-300">
+                    <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
+                    <span>1. Cámara Fija al Escenario (Sur)</span>
+                </div>
+                <div class="flex items-center space-x-2 text-slate-300">
+                    <span class="w-3 h-3 rounded-full bg-sky-500 shadow-[0_0_10px_#0ea5e9]"></span>
+                    <span>2. Cámara PTZ (Área periférica sur)</span>
+                </div>
+                <div class="flex items-center space-x-2 text-slate-300">
+                    <span class="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_10px_#f43f5e]"></span>
+                    <span>3. Cámara Móvil (Zona norte laguna)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instrucciones de Navegación -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-white/5 text-[11px] text-slate-400 space-y-1">
+            <div class="font-semibold text-slate-300"><i class="fa-solid fa-circle-info mr-1"></i> Controles 3D:</div>
+            <p>• <b>Girar vista:</b> Clic izq. + arrastrar</p>
+            <p>• <b>Desplazar (Pan):</b> Clic der. + arrastrar</p>
+            <p>• <b>Zoom:</b> Rueda del mouse</p>
+        </div>
+    </div>
+
+    <!-- Script de Simulación 3D Three.js -->
+    <script>
+        let scene, camera, renderer, controls;
+        let cameraObjects = {};
+        let activeCamKey = 'fija';
+
+        // Datos de posición inicial basados en la referencia exacta de la imagen satelital
+        const camData = {
+            fija: {
+                x: 0, z: 18, color: 0x10b981, name: 'Cámara Fija Escenario',
+                rot: 0, fov: 65, range: 30, height: 6
+            },
+            ptz: {
+                x: -8, z: 24, color: 0x0ea5e9, name: 'Cámara PTZ',
+                rot: 210, fov: 50, range: 38, height: 7
+            },
+            movil: {
+                x: 2, z: -15, color: 0xf43f5e, name: 'Cámara Móvil',
+                rot: 180, fov: 90, range: 45, height: 8
+            }
+        };
+
+        function init() {
+            // 1. Escena y Renderizador
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x090d16);
+            scene.fog = new THREE.FogExp2(0x090d16, 0.012);
+
+            const container = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // 2. Cámara Principal 3D
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 55, 65);
+
+            // 3. Controles Órbita
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // No bajar por debajo del suelo
+            controls.minDistance = 10;
+            controls.maxDistance = 150;
+            controls.target.set(0, 0, 0);
+
+            // 4. Iluminación Ambiental y Direccional (Sol)
+            const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.6);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            sunLight.position.set(40, 80, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.3);
+            fillLight.position.set(-40, 40, -50);
+            scene.add(fillLight);
+
+            // 5. Construir el Entorno Real (Morteros - Parque Central)
+            buildEnvironment();
+
+            // 6. Construir las 3 Cámaras y sus conos de cobertura volumétricos
+            createCameras();
+
+            // 7. Configurar eventos de UI
+            setupUIEvents();
+
+            // 8. Evento Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Iniciar bucle de animación
+            animate();
+        }
+
+        // Construir el mapa 3D estilizado (terreno, calles, manzana, parque y laguna)
+        function buildEnvironment() {
+            // Suelo base general
+            const groundGeo = new THREE.PlaneGeometry(250, 250);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Zona del Parque Central (Área verde central)
+            const parkGeo = new THREE.PlaneGeometry(90, 140);
+            const parkMat = new THREE.MeshStandardMaterial({ color: 0x1e3a29, roughness: 0.8 });
+            const park = new THREE.Mesh(parkGeo, parkMat);
+            park.rotation.x = -Math.PI / 2;
+            park.position.set(0, 0.05, 0);
+            park.receiveShadow = true;
+            scene.add(park);
+
+            // Laguna en el Parque (Zona Norte)
+            const lakeGeo = new THREE.CircleGeometry(16, 32);
+            const lakeMat = new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.2, metalness: 0.3 });
+            const lake = new THREE.Mesh(lakeGeo, lakeMat);
+            lake.rotation.x = -Math.PI / 2;
+            lake.position.set(2, 0.08, -18);
+            scene.add(lake);
+
+            // Escenario / Zona Sur del Parque
+            const stageGeo = new THREE.BoxGeometry(16, 0.8, 10);
+            const stageMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
+            const stage = new THREE.Mesh(stageGeo, stageMat);
+            stage.position.set(0, 0.4, 18);
+            stage.castShadow = true;
+            stage.receiveShadow = true;
+            scene.add(stage);
+
+            // Edificios Periféricos (Cuadros de manzanas 3D que rodean el parque)
+            const buildingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+            
+            // Generar manzanas perimetrales simuladas
+            const blockPositions = [
+                {x: -65, z: -40, w: 40, h: 4, d: 90},
+                {x: 65, z: -40, w: 40, h: 5, d: 90},
+                {x: -65, z: 50, w: 40, h: 3, d: 70},
+                {x: 65, z: 50, w: 40, h: 4, d: 70},
+                {x: 0, z: -65, w: 90, h: 6, d: 35},
+                {x: 0, z: 65, w: 90, h: 3, d: 35}
+            ];
+
+            blockPositions.forEach(b => {
+                const bGeo = new THREE.BoxGeometry(b.w, b.h, b.d);
+                const mesh = new THREE.Mesh(bGeo, buildingMat);
+                mesh.position.set(b.x, b.h / 2, b.z);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+            });
+
+            // Árboles decorativos alrededor del parque
+            const treeMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.8 });
+            for (let i = 0; i < 40; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 30 + Math.random() * 25;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                
+                if (z > -50 && z < 50 && Math.abs(x) < 55) {
+                    const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 3);
+                    const foliageGeo = new THREE.ConeGeometry(2.5, 5, 5);
+                    const treeGroup = new THREE.Group();
+                    
+                    const trunk = new THREE.Mesh(trunkGeo, new THREE.MeshStandardMaterial({color: 0x451a03}));
+                    trunk.position.y = 1.5;
+                    const foliage = new THREE.Mesh(foliageGeo, treeMat);
+                    foliage.position.y = 4.5;
+                    
+                    treeGroup.add(trunk);
+                    treeGroup.add(foliage);
+                    treeGroup.position.set(x, 0, z);
+                    scene.add(treeGroup);
+                }
+            }
+        }
+
+        // Crear las cámaras y sus conos volumétricos de cobertura
+        function createCameras() {
+            Object.keys(camData).forEach(key => {
+                const data = camData[key];
+                const group = new THREE.Group();
+
+                // 1. Poste de la cámara
+                const poleGeo = new THREE.CylinderGeometry(0.2, 0.3, data.height);
+                const poleMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8, roughness: 0.2 });
+                const pole = new THREE.Mesh(poleGeo, poleMat);
+                pole.position.y = data.height / 2;
+                pole.castShadow = true;
+                group.add(pole);
+
+                // 2. Cabezal de la cámara
+                const headGeo = new THREE.BoxGeometry(0.8, 0.8, 1.2);
+                const headMat = new THREE.MeshStandardMaterial({ color: data.color, metalness: 0.5, roughness: 0.3 });
+                const head = new THREE.Mesh(headGeo, headMat);
+                head.position.y = data.height;
+                head.castShadow = true;
+                group.add(head);
+
+                // 3. Cono de cobertura volumétrico transparente
+                const coneGroup = new THREE.Group();
+                coneGroup.position.y = data.height;
+                
+                // Creamos un cono volumétrico translúcido
+                const coneGeo = new THREE.ConeGeometry(1, 1, 32, 1, true);
+                // Ajustar geometría para que el vértice esté en el origen (0,0,0) y apunte hacia adelante (-Z)
+                coneGeo.translate(0, -0.5, 0);
+                coneGeo.rotateX(-Math.PI / 2);
+
+                const coneMat = new THREE.MeshBasicMaterial({
+                    color: data.color,
+                    transparent: true,
+                    opacity: 0.22,
+                    side: THREE.DoubleSide,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+                
+                const coneMesh = new THREE.Mesh(coneGeo, coneMat);
+                coneMesh.name = 'coneMesh';
+                coneGroup.add(coneMesh);
+
+                // Borde/líneas de la cobertura para mayor definición visual
+                const wireGeo = new THREE.WireframeGeometry(coneGeo);
+                const wireMat = new THREE.LineBasicMaterial({ color: data.color, transparent: true, opacity: 0.5 });
+                const wireMesh = new THREE.LineSegments(wireGeo, wireMat);
+                wireMesh.name = 'wireMesh';
+                coneGroup.add(wireMesh);
+
+                group.add(coneGroup);
+                group.position.set(data.x, 0, data.z);
+
+                scene.add(group);
+
+                // Guardar referencias para manipulación en tiempo real
+                cameraObjects[key] = {
+                    group: group,
+                    coneGroup: coneGroup,
+                    data: data
+                };
+
+                updateCameraTransform(key);
+            });
+        }
+
+        // Actualizar dimensiones, orientación y cono de cobertura de una cámara
+        function updateCameraTransform(key) {
+            const cam = cameraObjects[key];
+            const d = cam.data;
+
+            // Rotación en Y (Pan)
+            const rad = THREE.MathUtils.degToRad(d.rot);
+            cam.coneGroup.rotation.y = rad;
+
+            // Escalar el cono según FOV y Rango
+            const coneMesh = cam.coneGroup.getObjectByName('coneMesh');
+            const wireMesh = cam.coneGroup.getObjectByName('wireMesh');
+
+            // Calcular radio base del cono según el FOV y el alcance
+            const baseRadius = Math.tan(THREE.MathUtils.degToRad(d.fov / 2)) * d.range;
+            
+            coneMesh.scale.set(baseRadius, baseRadius, d.range);
+            wireMesh.scale.set(baseRadius, baseRadius, d.range);
+        }
+
+        // Configurar controles de UI
+        function setupUIEvents() {
+            const sliderRot = document.getElementById('slider-rot');
+            const sliderFov = document.getElementById('slider-fov');
+            const sliderRange = document.getElementById('slider-range');
+
+            sliderRot.addEventListener('input', (e) => {
+                camData[activeCamKey].rot = parseFloat(e.target.value);
+                document.getElementById('val-rot').innerText = e.target.value + '°';
+                updateCameraTransform(activeCamKey);
+            });
+
+            sliderFov.addEventListener('input', (e) => {
+                camData[activeCamKey].fov = parseFloat(e.target.value);
+                document.getElementById('val-fov').innerText = e.target.value + '°';
+                updateCameraTransform(activeCamKey);
+            });
+
+            sliderRange.addEventListener('input', (e) => {
+                camData[activeCamKey].range = parseFloat(e.target.value);
+                document.getElementById('val-range').innerText = e.target.value + ' m';
+                updateCameraTransform(activeCamKey);
+            });
+        }
+
+        // Seleccionar cámara activa en la interfaz
+        window.selectCamera = function(key) {
+            activeCamKey = key;
+            
+            // Actualizar clases de botones
+            ['fija', 'ptz', 'movil'].forEach(k => {
+                const btn = document.getElementById(`btn-${k}`);
+                if (k === key) {
+                    btn.className = `px-3 py-2 text-xs font-bold rounded-xl border border-${getColorName(k)}-500/50 bg-${getColorName(k)}-500/20 text-${getColorName(k)}-300 shadow-lg transition`;
+                } else {
+                    btn.className = `px-3 py-2 text-xs font-bold rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 transition`;
+                }
+            });
+
+            // Actualizar título y valores en sliders
+            const data = camData[key];
+            const titleEl = document.getElementById('active-cam-title');
+            titleEl.innerText = data.name;
+            titleEl.className = `text-sm font-bold text-${getColorName(key)}-400`;
+
+            document.getElementById('slider-rot').value = data.rot;
+            document.getElementById('val-rot').innerText = data.rot + '°';
+
+            document.getElementById('slider-fov').value = data.fov;
+            document.getElementById('val-fov').innerText = data.fov + '°';
+
+            document.getElementById('slider-range').value = data.range;
+            document.getElementById('val-range').innerText = data.range + ' m';
+
+            // Animar la cámara principal para enfocar la cámara seleccionada
+            const targetPos = cameraObjects[key].group.position;
+            controls.target.set(targetPos.x, targetPos.y + 2, targetPos.z);
+        };
+
+        function getColorName(key) {
+            if (key === 'fija') return 'emerald';
+            if (key === 'ptz') return 'sky';
+            return 'rose';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Bucle de Renderizado
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
